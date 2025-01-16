@@ -14,7 +14,7 @@ app.use(cors());
 app.use(express.json());
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
-// MongoDB Schema and connection (same as before)
+// MongoDB Schema and connection
 mongoose.connect('mongodb://127.0.0.1:27017/user-submissions', {
   useNewUrlParser: true,
   useUnifiedTopology: true,
@@ -30,7 +30,7 @@ const userSchema = new mongoose.Schema({
 
 const User = mongoose.model('User', userSchema);
 
-// Multer setup for file uploads (same as before)
+// Multer setup for file uploads
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     cb(null, 'uploads/');
@@ -74,6 +74,13 @@ app.get('/api/submissions', async (req, res) => {
   } catch (error) {
     res.status(500).json({ message: 'Error fetching submissions' });
   }
+});
+
+// Middleware for the root route to print server status message
+app.use('/', (req, res, next) => {
+  
+  res.send('Server is running');
+  next();
 });
 
 // Start the server
