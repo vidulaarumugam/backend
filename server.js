@@ -1,26 +1,22 @@
-const express = require('express');
-const multer = require('multer');
-const mongoose = require('mongoose');
-const cors = require('cors');
-const path = require('path');
-const http = require('http');
-const socketIo = require('socket.io');
+import multer from 'multer';
+import mongoose from 'mongoose';
+import { join } from 'path';
 
-const app = express();
-const server = http.createServer(app);
-const io = socketIo(server); // Initialize socket.io with the server
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, '/tmp'); // Store files in the /tmp directory on Vercel
+  },
+  filename: (req, file, cb) => {
+    cb(null, `${Date.now()}-${file.originalname}`);
+  },
+});
 
-app.use(cors());
-app.use(express.json());
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+const upload = multer({ storage }).array('images', 10);
 
-// MongoDB Schema and connection
 mongoose.connect('mongodb://127.0.0.1:27017/user-submissions', {
   useNewUrlParser: true,
   useUnifiedTopology: true,
-})
-.then(() => console.log('MongoDB connected'))
-.catch((err) => console.error(err));
+});
 
 const userSchema = new mongoose.Schema({
   name: String,
@@ -30,60 +26,30 @@ const userSchema = new mongoose.Schema({
 
 const User = mongoose.model('User', userSchema);
 
-// Multer setup for file uploads
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, 'uploads/');
-  },
-  filename: (req, file, cb) => {
-    cb(null, `${Date.now()}-${file.originalname}`);
-  },
-});
+export default (req, res) => {
+  if (req.method === 'POST') {
+    upload(req, res, async (err) => {
+      if (err) {
+        return res.status(500).json({ message: 'Upload failed' });
+      }
 
-const upload = multer({ storage });
+      try {
+        const { name, socialMediaHandle } = req.body;
+        const imagePaths = req.files.map((file) => file.path);
 
-// API route to handle form submissions
-app.post('/api/submit', upload.array('images', 10), async (req, res) => {
-  try {
-    const { name, socialMediaHandle } = req.body;
-    const imagePaths = req.files.map((file) => file.path);
+        const newUser = new User({
+          name,
+          socialMediaHandle,
+          images: imagePaths,
+        });
 
-    const newUser = new User({
-      name,
-      socialMediaHandle,
-      images: imagePaths,
+        await newUser.save();
+        res.status(200).json({ message: 'Submission successful!' });
+      } catch (error) {
+        res.status(500).json({ message: 'Internal server error' });
+      }
     });
-
-    await newUser.save();
-
-    // Emit an event when a new submission is added
-    io.emit('newSubmission', newUser);
-
-    res.status(200).json({ message: 'Submission successful!' });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: 'Internal server error' });
+  } else {
+    res.status(404).json({ message: 'Not found' });
   }
-});
-
-// API route to fetch all submissions
-app.get('/api/submissions', async (req, res) => {
-  try {
-    const submissions = await User.find();
-    res.status(200).json(submissions);
-  } catch (error) {
-    res.status(500).json({ message: 'Error fetching submissions' });
-  }
-});
-
-// Middleware for the root route to print server status message
-app.use('/', (req, res, next) => {
-  
-  res.send('Server is running');
-  next();
-});
-
-// Start the server
-server.listen(5000, () => {
-  console.log('Server is running on http://localhost:5000');
-});
+};
